@@ -11,10 +11,8 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Composer (ignore SSL certificate)
-ENV COMPOSER_ALLOW_SUPERUSER=1
-ENV COMPOSER_DISABLE_SSL=1
-RUN wget --no-check-certificate https://getcomposer.org/installer -O composer-setup.php && \
+# Install Composer
+RUN wget https://getcomposer.org/installer -O composer-setup.php && \
     php composer-setup.php --install-dir=/usr/local/bin --filename=composer && \
     rm composer-setup.php
 

@@ -1,0 +1,37 @@
+FROM ubuntu:22.04
+
+# сделать установку пакетов неинтерактивной
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Europe/Berlin
+
+# установка базовых пакетов
+RUN apt-get update && apt-get install -y \
+    ansible \
+    openssh-client \
+    python3 \
+    python3-pip \
+    sshpass \
+    tzdata \
+    openssh-server && \
+    rm -rf /var/lib/apt/lists/*
+
+# создание пользователя jenkins
+RUN useradd -m -d /home/jenkins -s /bin/bash jenkins
+
+# создание директории для SSH
+RUN mkdir -p /home/jenkins/.ssh && \
+    chown -R jenkins:jenkins /home/jenkins/.ssh && \
+    chmod 700 /home/jenkins/.ssh
+
+# настройка SSH для подключения Jenkins
+RUN mkdir /var/run/sshd && \
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's@session\s*required\s*pam_loginuid.so@session optional pam_loginuid.so@g' /etc/pam.d/sshd
+
+USER jenkins
+WORKDIR /home/jenkins
+
+EXPOSE 22
+
+USER root
+CMD ["/usr/sbin/sshd", "-D"]
