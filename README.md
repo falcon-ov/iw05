@@ -1,149 +1,219 @@
-# Lab05 — Автоматизация конфигурации сервера с помощью Ansible
+# Lab05 --- Автоматизация конфигурации сервера с помощью Ansible
 
-## Цель
-Научиться создавать Ansible playbook’и для автоматизации конфигурации сервера.
+В этой работе я настроил полную цепочку автоматизации: **Jenkins → SSH
+Agent → Ansible Agent → Test Server**. Также созданы три pipeline'а и
+Ansible playbook для конфигурации сервера.
 
-## Предварительные требования
-Это задание основано на Individual Work IW04.
+------------------------------------------------------------------------
 
-Создайте папку **lab05** в своём GitHub-репозитории для хранения всех файлов, относящихся к этой индивидуальной работе.  
-Для выполнения задания должны быть установлены **Docker** и **Docker Compose**.  
-Также у вас должен быть репозиторий с **PHP-проектом, содержащим unit-тесты**, как в Individual Work IW04.
+## 1. Настройка Jenkins Controller
 
-Скопируйте файлы из предыдущей работы **lab04** в папку **lab05**.
+Создан сервис `jenkins-controller` в `compose.yaml`:
 
-Задание включает шаги из предыдущих работ, помеченные как **Review**.
+``` yaml
+services:
+  jenkins-controller:
+    image: jenkins/jenkins:lts
+    ports:
+      - "8080:8080"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+```
 
----
+После запуска выполнена первоначальная настройка и установлены плагины:
 
-## Задание
+-   Docker\
+-   Docker Pipeline\
+-   GitHub Integration\
+-   SSH Agent
 
-### Создайте файл `compose.yaml`.
+------------------------------------------------------------------------
 
----
+## 2. Настройка SSH Agent
 
-## 1. Установка и настройка Jenkins  
-> **Review**
+Создан `Dockerfile.ssh_agent`:
 
-Jenkins будет использоваться для управления всеми этапами автоматизации.
+``` dockerfile
+FROM ubuntu:22.04
 
-- Создайте сервис **jenkins-controller** в `compose.yaml`.  
-- Запустите контейнер Jenkins Controller через Docker Compose и выполните настройку, следуя инструкциям на экране.  
-- Установите необходимые плагины:  
-  **Docker, Docker Pipeline, GitHub Integration, SSH Agent**.
+RUN apt update && apt install -y     php-cli php-xml php-mbstring php-curl php-zip     openssh-server git curl
 
----
+RUN mkdir /var/run/sshd
+```
 
-## 2. Настройка SSH Agent  
-> **Review**
+Созданы SSH‑ключи и добавлены Jenkins‑credentials.
 
-SSH-агент будет использоваться Jenkins для сборки PHP-проекта и запуска unit-тестов.
+Добавлен сервис:
 
-- Создайте файл **Dockerfile.ssh_agent**(Dockerfile) для SSH-агента.  
-- Установите нужные пакеты (PHP-CLI и, возможно, другие зависимости).  
-- Создайте SSH-ключи для интеграции Jenkins с SSH-агентом и настройте Jenkins на использование этих ключей.  
-- Добавьте сервис **ssh-agent** в compose.yaml.
+``` yaml
+ssh-agent:
+  build:
+    context: .
+    dockerfile: Dockerfile.ssh_agent
+  volumes:
+    - ssh_agent_home:/home/jenkins
+```
 
----
+------------------------------------------------------------------------
 
 ## 3. Создание Ansible Agent
 
-Ansible-агент будет использоваться Jenkins для выполнения Ansible playbook'ов, которые будут настраивать тестовый сервер.
+Создан `Dockerfile.ansible_agent`:
 
-- Создайте файл **Dockerfile.ansible_agent** на базе Ubuntu. Установите Ansible и необходимые зависимости.  
-- Создайте SSH-ключи для интеграции Jenkins с Ansible-агентом и настройте Jenkins для их использования.  
-- Создайте SSH-ключи для подключения Ansible-агента к тестовому серверу и настройте Ansible на их применение. Подключение должно выполняться от пользователя **ansible**.  
-- Добавьте сервис **ansible-agent** в compose.yaml.
+``` dockerfile
+FROM ubuntu:22.04
 
----
+RUN apt update && apt install -y ansible openssh-client sshpass git
+```
+
+Добавлен сервис:
+
+``` yaml
+ansible-agent:
+  build:
+    context: .
+    dockerfile: Dockerfile.ansible_agent
+  volumes:
+    - ansible_home:/home/ansible
+```
+
+------------------------------------------------------------------------
 
 ## 4. Создание Test Server
 
-Тестовый сервер будет представлять тестовую среду, которая будет настраиваться Ansible playbook’ами и в которой будет проверяться работа PHP-приложения.
+Создан `Dockerfile.test_server`:
 
-- Создайте файл **Dockerfile.test_server** на основе Ubuntu.  
-- Установите **openssh-server** и настройте его на работу с SSH-ключами.  
-- Создайте пользователя **ansible** и настройте SSH-доступ с использованием созданных ранее ключей.
+``` dockerfile
+FROM ubuntu:22.04
 
----
+RUN apt update && apt install -y openssh-server sudo     && mkdir /var/run/sshd
 
-## 5. Создание Ansible Playbook для конфигурации тестового сервера
+RUN useradd -m ansible &&     mkdir -p /home/ansible/.ssh && chmod 700 /home/ansible/.ssh
+```
 
-- Создайте папку **ansible**.  
-- Внутри создайте файл inventory — **hosts.ini**.  
-- Создайте playbook **setup_test_server.yml**, выполняющий:
+Добавлен публичный ключ, включён SSH‑доступ.
 
-### Задачи:
-- Установка и настройка **Apache2**  
-- Установка и настройка **PHP** и нужных расширений  
-- Настройка Apache **virtual host** для PHP-проекта  
+------------------------------------------------------------------------
 
----
+## 5. Ansible Playbook
 
-## 6. Pipeline для сборки и тестирования PHP-проекта  
-> **Review**
+Файл `hosts.ini`:
 
-- Создайте папку **pipelines**.  
-- Создайте Jenkins pipeline для сборки и тестирования PHP-проекта с использованием SSH-агента.  
-- Сохраните как **php_build_and_test_pipeline.groovy**.
+``` ini
+[testserver]
+test-server ansible_host=test-server ansible_user=ansible
+```
 
-### Этапы pipeline:
-1. Клонирование репозитория PHP-проекта  
-2. Установка зависимостей через **Composer**  
-3. Запуск тестов через **PHPUnit**  
-4. Отчёт о результатах тестирования  
+Playbook `setup_test_server.yml`:
 
----
+``` yaml
+- hosts: testserver
+  become: yes
+  tasks:
+    - name: install apache
+      apt: name=apache2 state=present update_cache=yes
 
-## 7. Pipeline для конфигурации тестового сервера с Ansible
+    - name: install php
+      apt: name=php state=present
 
-- Создайте Jenkins pipeline для настройки тестового сервера с Ansible-агентом.  
-- Сохраните как **ansible_setup_pipeline.groovy**.
+    - name: enable vhost
+      copy:
+        src: vhost.conf
+        dest: /etc/apache2/sites-available/000-default.conf
+```
 
-### Этапы:
-1. Клонирование репозитория с Ansible playbook  
-2. Выполнение playbook для настройки тестового сервера  
+------------------------------------------------------------------------
 
----
+## 6. Pipeline сборки и тестирования PHP‑проекта
 
-## 8. Pipeline для деплоя PHP-проекта на тестовый сервер
+Файл `php_build_and_test_pipeline.groovy`:
 
-- Создайте Jenkins pipeline для деплоя PHP-проекта на тестовый сервер.  
-- Сохраните как **php_deploy_pipeline.groovy**.
+``` groovy
+node {
+    sshagent(['ssh-agent-php']) {
+        stage('Clone') {
+            git 'https://github.com/user/php-project.git'
+        }
+        stage('Composer install') {
+            sh 'composer install'
+        }
+        stage('Run tests') {
+            sh './vendor/bin/phpunit --testdox'
+        }
+    }
+}
+```
 
-### Этапы:
-1. Клонирование репозитория с PHP-проектом  
-2. Копирование файлов на тестовый сервер  
-3. Конфигурация проекта (если нужно)  
-4. Деплой (может быть выполнен через Ansible)  
+------------------------------------------------------------------------
 
----
+## 7. Pipeline настройки тестового сервера
 
-## 9. Тестирование развернутого PHP-проекта
+``` groovy
+node {
+    sshagent(['ssh-ansible']) {
+        stage('Clone') {
+            git 'https://github.com/user/lab05.git'
+        }
+        stage('Run Ansible') {
+            sh 'ansible-playbook -i ansible/hosts.ini ansible/setup_test_server.yml'
+        }
+    }
+}
+```
 
-Откройте браузер и перейдите по адресу тестового сервера.  
-Убедитесь, что проект работоспособен.
+------------------------------------------------------------------------
 
----
+## 8. Pipeline деплоя PHP‑проекта
 
-# Подготовка отчёта
+``` groovy
+node {
+    sshagent(['ssh-ansible']) {
+        stage('Clone') {
+            git 'https://github.com/user/php-project.git'
+        }
+        stage('Deploy') {
+            sh 'scp -r . ansible@test-server:/var/www/html/'
+        }
+    }
+}
+```
 
-Создайте **readme.md** в папке lab05.
+------------------------------------------------------------------------
 
-### В отчёт включить:
-- описание проекта  
-- шаги настройки Jenkins Controller  
-- шаги настройки SSH-агента  
-- шаги конфигурации Ansible-агента  
-- шаги создания тестового сервера  
-- описание Ansible playbook и его задач  
-- описание Jenkins pipelines:
-  - сборка и тестирование PHP-проекта  
-  - настройка тестового сервера  
-  - деплой PHP-проекта  
+## 9. Тестирование проекта
 
-### Ответить на вопросы:
-1. Каковы преимущества использования Ansible для конфигурации сервера?  
-2. Какие другие модули Ansible существуют для управления конфигурациями?  
-3. Какие проблемы возникли при создании playbook и как они были решены?
+После деплоя проект работает в браузере.
 
+------------------------------------------------------------------------
+
+# Ответы на вопросы
+
+### 1. Преимущества Ansible
+
+-   Безагентная работа\
+-   Простые YAML‑playbook'и\
+-   SSH‑ориентированный подход\
+-   Масштабируемость
+
+### 2. Другие модули Ansible
+
+-   `apt`, `yum` --- пакеты\
+
+-   `copy`, `template` --- файлы
+
+-   `service` --- сервисы\
+
+-   `user` --- пользователи\
+
+-   `git` --- репозитории
+
+### 3. Проблемы и решения
+
+**Проблема:** неправильные права `.ssh`\
+**Решение:** `chmod 700` и `chmod 600`
+
+**Проблема:** Ansible не подключался\
+**Решение:** правильный `ansible_user` и ключ
+
+**Проблема:** Apache не видел проект\
+**Решение:** обновление vhost и рестарт службы
