@@ -3,8 +3,8 @@ pipeline {
         label 'php-agent'
     }
     
-    stages {
-        stage('Clone Repository') {
+    stages {        
+        stage('Checkout') {
             steps {
                 echo 'Cloning repository...'
                 checkout scm
@@ -24,7 +24,7 @@ pipeline {
             steps {
                 echo 'Running PHPUnit tests...'
                 dir('lab05/php-project') {
-                    sh './vendor/bin/phpunit --testdox'
+                    sh 'php vendor/bin/phpunit --testdox'
                 }
             }
         }
@@ -35,10 +35,10 @@ pipeline {
             echo 'Pipeline completed.'
         }
         success {
-            echo 'All tests passed successfully!'
+            echo '✓ All tests passed successfully!'
         }
         failure {
-            echo 'Tests failed!'
+            echo '✗ Tests failed or errors detected.'
         }
     }
 }

@@ -4,10 +4,19 @@ pipeline {
     }
     
     stages {
-        stage('Clone Repository') {
+        stage('Checkout') {
             steps {
-                echo 'Cloning repository with PHP project...'
+                echo 'Cloning PHP project repository...'
                 checkout scm
+            }
+        }
+        
+        stage('Prepare Deployment') {
+            steps {
+                echo 'Preparing project files for deployment...'
+                dir('lab05/php-project') {
+                    sh 'composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader'
+                }
             }
         }
         
@@ -16,16 +25,32 @@ pipeline {
                 echo 'Deploying PHP project to test server...'
                 dir('lab05') {
                     sh '''
-                        # Копируем файлы проекта на test server
-                        ansible test_servers -i ansible/hosts.ini -m file -a "path=/var/www/php-project state=directory owner=www-data group=www-data mode=0755" --become
+                        # Copy project files to test server
+                        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                            -i /home/jenkins/.ssh/ansible/id_rsa \
+                            -r php-project/src/* ansible@test-server:/var/www/html/
                         
-                        # Копируем исходники
-                        ansible test_servers -i ansible/hosts.ini -m copy -a "src=php-project/src/ dest=/var/www/php-project/ owner=www-data group=www-data" --become
+                        # Create a simple index.php for testing
+                        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                            -i /home/jenkins/.ssh/ansible/id_rsa \
+                            ansible@test-server "echo '<?php require_once \"/var/www/html/Calculator.php\"; use App\\\\Calculator; \\$calc = new Calculator(); echo \"<h1>Calculator Test</h1>\"; echo \"<p>5 + 3 = \" . \\$calc->add(5, 3) . \"</p>\"; echo \"<p>10 - 4 = \" . \\$calc->subtract(10, 4) . \"</p>\"; echo \"<p>6 * 7 = \" . \\$calc->multiply(6, 7) . \"</p>\"; echo \"<p>20 / 4 = \" . \\$calc->divide(20, 4) . \"</p>\"; phpinfo();' | sudo tee /var/www/html/index.php"
                         
-                        # Создаем простой index.php если его нет
-                        ansible test_servers -i ansible/hosts.ini -m copy -a "dest=/var/www/php-project/index.php content='<?php require_once \"Calculator.php\"; echo \"Calculator deployed successfully!\"; ?>' owner=www-data group=www-data" --become
+                        # Set proper permissions
+                        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                            -i /home/jenkins/.ssh/ansible/id_rsa \
+                            ansible@test-server "sudo chown -R www-data:www-data /var/www/html && sudo chmod -R 755 /var/www/html"
                     '''
                 }
+            }
+        }
+        
+        stage('Verify Deployment') {
+            steps {
+                echo 'Verifying deployment...'
+                sh '''
+                    sleep 5
+                    curl -s http://test-server/ | grep -q "Calculator" && echo "✓ Deployment verified!" || echo "✗ Deployment verification failed!"
+                '''
             }
         }
     }
@@ -35,10 +60,11 @@ pipeline {
             echo 'Deployment pipeline completed.'
         }
         success {
-            echo 'PHP project deployed successfully!'
+            echo '✓ PHP project deployed successfully!'
+            echo 'Access the application at: http://localhost:8081'
         }
         failure {
-            echo 'Deployment failed!'
+            echo '✗ Deployment failed.'
         }
     }
 }

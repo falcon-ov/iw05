@@ -2,6 +2,10 @@
 - name: Setup Test Server for PHP Application
   hosts: test_servers
   become: yes
+  vars:
+    document_root: /var/www/html
+    server_name: test-server
+    
   tasks:
     - name: Update apt cache
       apt:
@@ -28,40 +32,39 @@
       apache2_module:
         name: rewrite
         state: present
+      notify: Restart Apache
 
-    - name: Create web directory
+    - name: Create document root directory
       file:
-        path: /var/www/php-project
+        path: "{{ document_root }}"
         state: directory
         owner: www-data
         group: www-data
         mode: '0755'
 
-    - name: Configure Apache virtual host
-      copy:
+    - name: Configure Apache Virtual Host
+      template:
+        src: vhost.conf.j2
         dest: /etc/apache2/sites-available/php-project.conf
-        content: |
-          <VirtualHost *:80>
-              ServerAdmin webmaster@localhost
-              DocumentRoot /var/www/php-project
-              
-              <Directory /var/www/php-project>
-                  Options Indexes FollowSymLinks
-                  AllowOverride All
-                  Require all granted
-              </Directory>
-              
-              ErrorLog ${APACHE_LOG_DIR}/error.log
-              CustomLog ${APACHE_LOG_DIR}/access.log combined
-          </VirtualHost>
-
-    - name: Enable PHP project site
-      command: a2ensite php-project.conf
+        owner: root
+        group: root
+        mode: '0644'
       notify: Restart Apache
 
     - name: Disable default site
       command: a2dissite 000-default.conf
       notify: Restart Apache
+      ignore_errors: yes
+
+    - name: Enable PHP project site
+      command: a2ensite php-project.conf
+      notify: Restart Apache
+
+    - name: Ensure Apache is started and enabled
+      service:
+        name: apache2
+        state: started
+        enabled: yes
 
   handlers:
     - name: Restart Apache

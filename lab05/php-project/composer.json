@@ -1,5 +1,5 @@
 {
-    "name": "lab04/php-project",
+    "name": "lab05/php-project",
     "description": "Simple PHP project for Jenkins CI/CD demonstration",
     "type": "project",
     "require": {

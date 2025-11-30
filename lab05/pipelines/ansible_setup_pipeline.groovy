@@ -4,16 +4,16 @@ pipeline {
     }
     
     stages {
-        stage('Clone Repository') {
+        stage('Checkout') {
             steps {
                 echo 'Cloning repository with Ansible playbook...'
                 checkout scm
             }
         }
         
-        stage('Run Ansible Playbook') {
+        stage('Setup Test Server') {
             steps {
-                echo 'Executing Ansible playbook...'
+                echo 'Running Ansible playbook to configure test server...'
                 dir('lab05/ansible') {
                     sh '''
                         ansible-playbook -i hosts.ini setup_test_server.yml -v
@@ -25,13 +25,13 @@ pipeline {
     
     post {
         always {
-            echo 'Ansible pipeline completed.'
+            echo 'Ansible setup pipeline completed.'
         }
         success {
-            echo 'Test server configured successfully!'
+            echo '✓ Test server configured successfully!'
         }
         failure {
-            echo 'Configuration failed!'
+            echo '✗ Failed to configure test server.'
         }
     }
 }
